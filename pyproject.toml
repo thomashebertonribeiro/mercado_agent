@@ -1,0 +1,43 @@
+[project]
+name = "mercadolivre-datalake"
+version = "0.1.0"
+description = "E-Commerce Intelligence Data Lake for Mercado Livre"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.1",
+    "sqlalchemy[asyncio]>=2.0.31",
+    "asyncpg>=0.29.0",
+    "psycopg[binary]>=3.1.19",
+    "alembic>=1.13.1",
+    "redis>=5.0.7",
+    "hiredis>=2.3.2",
+    "httpx>=0.27.0",
+    "playwright>=1.44.0",
+    "tenacity>=8.4.1",
+    "loguru>=0.7.2",
+    "pydantic-settings>=2.3.3",
+    "apscheduler>=3.10.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.2",
+    "pytest-asyncio>=0.23.7",
+    "black>=24.4.2",
+    "isort>=5.13.2",
+    "mypy>=1.10.0",
+    "hypothesis>=6.100.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["api", "config", "models", "workers", "database", "services", "collector", "scheduler", "repositories", "utils", "intelligence", "opportunity", "ai_analyst"]

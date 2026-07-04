@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: datalake-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: datalake
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d datalake"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: datalake-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  api:
+    build: .
+    container_name: datalake-api
+    command: sh -c "alembic upgrade head && python api/main.py"
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/datalake
+      - SYNC_DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/datalake
+      - REDIS_URL=redis://redis:6379/0
+      - ENV=production
+      - API_PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  worker:
+    build: .
+    container_name: datalake-worker
+    command: python workers/consumer.py
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/datalake
+      - SYNC_DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/datalake
+      - REDIS_URL=redis://redis:6379/0
+      - ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  scheduler:
+    build: .
+    container_name: datalake-scheduler
+    command: python scheduler/main.py
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/datalake
+      - SYNC_DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/datalake
+      - REDIS_URL=redis://redis:6379/0
+      - ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  db-backup:
+    image: postgres:17-alpine
+    container_name: datalake-backup
+    volumes:
+      - ./backups:/backups
+    environment:
+      - PGPASSWORD=postgres
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mkdir -p /backups;
+      echo 'Database backup service started...';
+      while true; do
+        echo 'Starting automated database backup...';
+        FILENAME='/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz';
+        pg_dump -h db -U postgres -d datalake | gzip > $$FILENAME;
+        echo 'Backup created successfully: ' $$FILENAME;
+        # Keep only the last 7 days of backups to minimize storage usage
+        find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
+        echo 'Waiting for next backup cycle (24 hours)...';
+        sleep 86400;
+      done
+      "
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
