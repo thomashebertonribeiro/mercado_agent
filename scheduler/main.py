@@ -1,21 +1,17 @@
 """
 scheduler/main.py
 
-Scheduler da Plataforma de Inteligência de Mercado.
+Scheduler da Plataforma de Inteligencia de Mercado.
 
 Jobs registrados:
-  1. Scanner Discovery   → percorre categorias e descobre produtos (dinâmico)
-  2. Collection Engine   → coleta dados dos produtos descobertos
-  3. Intelligence Engine → gera sinais matemáticos
-  4. Opportunity Score   → computa scores de oportunidade
-  5. Recommendation Engine → gera rankings priorizados
-  6. AI Analyst          → gera relatórios executivos
-
-Frequência dinâmica por categoria:
-  - HIGH:   a cada 6h   (≥10k anúncios)
-  - MEDIUM: a cada 24h  (≥1k anúncios)
-  - LOW:    a cada 72h  (>0 anúncios)
-  - ONCE:   não repete  (categoria vazia)
+  1. Sync Seller Items    → sincroniza anuncios do vendedor (1h)
+  2. Sync Competitors     → monitora concorrentes (6h)
+  3. Sync Categories      → atualiza catalogo de categorias (24h)
+  4. Sync Trends          → coleta tendencias de mercado (24h)
+  5. Sync Metrics         → coleta metricas dos vendedores (24h)
+  6. Intelligence Engine  → gera sinais matematicos (12h)
+  7. Opportunity Score    → computa scores de oportunidade (6h)
+  8. Recommendation Engine → gera rankings priorizados (12h)
 """
 
 from __future__ import annotations
@@ -34,105 +30,38 @@ from utils.logger import logger
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Globals
-# ─────────────────────────────────────────────────────────────────────────────
-
-_scanner: MarketScanner | None = None
-_collector = None  # será o IntelligentCollector (já existe)
-
-
-def _get_scanner() -> MarketScanner:
-    global _scanner
-    if _scanner is None:
-        _scanner = MarketScanner(
-            provider=MercadoLivreProvider(),
-            session_factory=AsyncSessionLocal,
-            max_concurrency=settings.COLLECTOR_MAX_CONCURRENCY,
-        )
-    return _scanner
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Jobs
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-async def run_scanner_discovery() -> None:
-    """Varre categorias e descobre novos produtos automaticamente."""
-    scanner = _get_scanner()
-    try:
-        if not scanner.get_category_tree():
-            await scanner.initialize()
-        result = await scanner.scan_all_categories()
-        logger.info(
-            "Scanner discovery concluído",
-            categories=result.categories_scanned,
-            new_products=result.new_products,
-            errors=result.errors,
-            duration=round(result.duration_seconds, 1),
-        )
-    except Exception as exc:
-        logger.error("Scanner discovery falhou", error=str(exc))
+async def run_sync_seller_items() -> None:
+    """Sincroniza anuncios do vendedor autenticado (a cada 1h)."""
+    from jobs.sync_jobs import sync_seller_items
+    await sync_seller_items()
 
 
-async def run_collection() -> None:
-    """Coleta dados dos produtos descobertos.
+async def run_sync_competitors() -> None:
+    """Monitora concorrentes cadastrados (a cada 6h)."""
+    from jobs.sync_jobs import sync_competitors
+    await sync_competitors()
 
-    Usa o IntelligentCollector existente em modo incremental.
-    Se não houver collector, apenas loga aviso.
-    """
-    global _collector
-    if _collector is None:
-        try:
-            from collector.api_client import MercadoLivreAPICollector
-            from collector.cache_manager import CacheManager
-            from collector.intelligent_collector import IntelligentCollector
-            from collector.modes import CollectionMode
-            from collector.rate_limiter import RateLimiter
 
-            import redis.asyncio as aioredis
+async def run_sync_categories() -> None:
+    """Atualiza catalogo de categorias (1x por dia)."""
+    from jobs.sync_jobs import sync_categories
+    await sync_categories()
 
-            api_client = MercadoLivreAPICollector()
-            try:
-                redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=False)
-                cache_manager = CacheManager(
-                    redis_client=redis_client,
-                    hash_ttl_seconds=settings.CACHE_HASH_TTL_SECONDS,
-                    payload_ttl_seconds=settings.CACHE_PAYLOAD_TTL_SECONDS,
-                )
-            except Exception as exc:
-                logger.warning("Redis indisponível — cache desativado", error=str(exc))
-                cache_manager = None
 
-            rate_limiter = RateLimiter(max_concurrency=settings.COLLECTOR_MAX_CONCURRENCY)
-            _collector = IntelligentCollector(
-                api_client=api_client,
-                cache_manager=cache_manager,
-                rate_limiter=rate_limiter,
-                session_factory=AsyncSessionLocal,
-                max_concurrency=settings.COLLECTOR_MAX_CONCURRENCY,
-                max_retries=settings.COLLECTOR_MAX_RETRIES,
-                backoff_base=settings.COLLECTOR_BACKOFF_BASE,
-                max_wait=settings.COLLECTOR_MAX_WAIT,
-                api_rate_limit_delay=settings.API_RATE_LIMIT_DELAY,
-            )
-        except Exception as exc:
-            logger.warning("Collector não disponível", error=str(exc))
-            return
+async def run_sync_trends() -> None:
+    """Coleta tendencias de mercado (1x por dia)."""
+    from jobs.sync_jobs import sync_trends
+    await sync_trends()
 
-    try:
-        from collector.modes import CollectionMode
-        job = await _collector.collect(mode=CollectionMode.INCREMENTAL)
-        logger.info(
-            "Coleta concluída",
-            job_id=job.id,
-            status=job.status,
-            processed=job.processed,
-            events=job.events_generated,
-            errors=job.errors,
-        )
-    except Exception as exc:
-        logger.error("Coleta falhou", error=str(exc))
+
+async def run_sync_metrics() -> None:
+    """Coleta metricas dos vendedores (1x por dia)."""
+    from jobs.sync_jobs import sync_metrics
+    await sync_metrics()
 
 
 async def run_intelligence_analysis() -> None:
@@ -299,32 +228,62 @@ async def run_recommendations() -> None:
 
 
 async def run_scheduler() -> None:
-    """Inicia o scheduler com jobs periódicos."""
-    logger.info("Iniciando scheduler da Plataforma de Inteligência de Mercado")
+    """Inicia o scheduler com jobs periodicos."""
+    logger.info("Iniciando scheduler da Plataforma de Inteligencia de Mercado")
 
     scheduler = AsyncIOScheduler()
 
-    # Scanner: descobre produtos (a cada 6h)
+    # Sync Seller Items (a cada 1h)
     scheduler.add_job(
-        run_scanner_discovery,
-        trigger="interval",
-        hours=6,
-        id="scanner_discovery",
-        name="Scanner Discovery",
-        replace_existing=True,
-    )
-
-    # Coleta: dados dos produtos (a cada 1h)
-    scheduler.add_job(
-        run_collection,
+        run_sync_seller_items,
         trigger="interval",
         hours=1,
-        id="collection",
-        name="Collection Engine",
+        id="sync_seller_items",
+        name="Sync Seller Items",
         replace_existing=True,
     )
 
-    # Intelligence Engine (a cada 6h)
+    # Sync Competitors (a cada 6h)
+    scheduler.add_job(
+        run_sync_competitors,
+        trigger="interval",
+        hours=6,
+        id="sync_competitors",
+        name="Sync Competitors",
+        replace_existing=True,
+    )
+
+    # Sync Categories (1x por dia)
+    scheduler.add_job(
+        run_sync_categories,
+        trigger="interval",
+        hours=24,
+        id="sync_categories",
+        name="Sync Categories",
+        replace_existing=True,
+    )
+
+    # Sync Trends (1x por dia)
+    scheduler.add_job(
+        run_sync_trends,
+        trigger="interval",
+        hours=24,
+        id="sync_trends",
+        name="Sync Trends",
+        replace_existing=True,
+    )
+
+    # Sync Metrics (1x por dia)
+    scheduler.add_job(
+        run_sync_metrics,
+        trigger="interval",
+        hours=24,
+        id="sync_metrics",
+        name="Sync Metrics",
+        replace_existing=True,
+    )
+
+    # Intelligence Engine (a cada 12h)
     scheduler.add_job(
         run_intelligence_analysis,
         trigger="interval",
@@ -356,7 +315,8 @@ async def run_scheduler() -> None:
 
     scheduler.start()
     logger.info(
-        "Scheduler iniciado. Jobs: scanner(6h), collection(1h), "
+        "Scheduler iniciado. Jobs: sync_seller(1h), sync_competitors(6h), "
+        "sync_categories(24h), sync_trends(24h), sync_metrics(24h), "
         "intelligence(12h), scores(6h), recommendations(12h)",
     )
 

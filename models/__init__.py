@@ -21,6 +21,10 @@ from models.signal import Signal
 from models.recommendation import Recommendation
 from models.opportunity_score import OpportunityScoreResult
 from models.analysis_report import AnalysisReport
+from models.competitor import Competitor
+from models.competitor_history import CompetitorHistory
+from models.market_trend import MarketTrend
+from models.marketplace_account import MarketplaceAccount
 
 __all__ = [
     "Base",
@@ -42,4 +46,8 @@ __all__ = [
     "Recommendation",
     "OpportunityScoreResult",
     "AnalysisReport",
+    "Competitor",
+    "CompetitorHistory",
+    "MarketTrend",
+    "MarketplaceAccount",
 ]

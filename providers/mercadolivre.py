@@ -1,10 +1,14 @@
 """
 providers/mercadolivre.py
 
-Implementação do MarketplaceProvider para o Mercado Livre (MLB).
+Implementacao do MarketplaceProvider para o Mercado Livre (MLB).
 
-Utiliza a API oficial pública + Playwright como fallback
-para dados não disponíveis via API.
+Utiliza a API oficial autenticada para dados do vendedor e concorrentes.
+Endpoints publicos para categorias, trends e domain discovery.
+
+NOTA: O endpoint /sites/MLB/search nao esta disponivel para apps nao certificados.
+      Para busca de itens, use /users/{id}/items/search (itens do vendedor)
+      ou /items/{id} (detalhe de item especifico).
 """
 
 from __future__ import annotations
@@ -99,11 +103,15 @@ class MercadoLivreProvider(MarketplaceProvider):
         offset: int = 0,
         limit: int = 50,
     ) -> list[ProductListing]:
-        data = await self._get(
-            f"/sites/{self.SITE_ID}/search?"
-            f"category={category_id}&offset={offset}&limit={limit}"
+        """
+        NOTA: Este metodo usa /sites/MLB/search que esta restrito.
+        Para produtos do vendedor, use /users/{id}/items/search via SyncService.
+        Lanca NotImplementedError para indicar que este endpoint nao esta disponivel.
+        """
+        raise NotImplementedError(
+            "get_products_by_category nao esta disponivel. "
+            "Use /users/{id}/items/search via SyncService para itens do vendedor."
         )
-        return self._parse_search_results(data)
 
     async def get_product_detail(self, product_id: str) -> Optional[ProductPage]:
         try:
@@ -154,19 +162,12 @@ class MercadoLivreProvider(MarketplaceProvider):
         offset: int = 0,
         limit: int = 50,
     ) -> SearchResultPage:
-        path = f"/sites/{self.SITE_ID}/search?q={query}&offset={offset}&limit={limit}"
-        if category_id:
-            path += f"&category={category_id}"
-        data = await self._get(path)
-
-        results = self._parse_search_results(data)
-        return SearchResultPage(
-            query=query,
-            results=results,
-            total=data.get("paging", {}).get("total", 0),
-            page=offset // limit + 1 if limit else 1,
-            page_size=limit,
-            filters=data.get("available_filters"),
+        """
+        NOTA: O endpoint /sites/MLB/search nao esta disponivel para apps nao certificados.
+        Lanca NotImplementedError.
+        """
+        raise NotImplementedError(
+            "search nao esta disponivel. Apps nao certificados nao podem usar /sites/MLB/search."
         )
 
     async def search_by_category(
@@ -175,26 +176,23 @@ class MercadoLivreProvider(MarketplaceProvider):
         offset: int = 0,
         limit: int = 50,
     ) -> Optional[dict]:
-        """Retorna JSON bruto da busca por categoria (usado pelo scanner)."""
-        try:
-            return await self._get(
-                f"/sites/{self.SITE_ID}/search?"
-                f"category={category_id}&offset={offset}&limit={limit}"
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return None
-            raise
+        """
+        NOTA: O endpoint /sites/MLB/search nao esta disponivel para apps nao certificados.
+        Lanca NotImplementedError.
+        """
+        raise NotImplementedError(
+            "search_by_category nao esta disponivel. Apps nao certificados nao podem usar /sites/MLB/search."
+        )
 
     # ── 5. Métodos auxiliares ──────────────────────────────────────────
 
     async def get_category_total_items(self, category_id: str) -> int:
-        """Retorna o total de anúncios em uma categoria (sem carregar resultados)."""
-        data = await self._get(
-            f"/sites/{self.SITE_ID}/search?"
-            f"category={category_id}&offset=0&limit=1"
-        )
-        return data.get("paging", {}).get("total", 0)
+        """
+        Retorna o total de anuncios em uma categoria.
+        Usa /categories/{id} que e um endpoint publico.
+        """
+        data = await self._get(f"/categories/{category_id}")
+        return data.get("total_items_in_this_category", 0)
 
     # ── Internos ───────────────────────────────────────────────────────
 

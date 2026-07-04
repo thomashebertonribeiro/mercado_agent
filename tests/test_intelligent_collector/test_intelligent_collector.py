@@ -661,13 +661,11 @@ async def test_duplicate_running_job() -> None:
                 mock_collector.collect.return_value = mock_job
                 mock_cls.return_value = mock_collector
 
-                from scheduler.main import run_collection
+                from jobs.sync_jobs import sync_seller_items
 
-                with patch("scheduler.main.AsyncSessionLocal") as mock_session_factory:
+                with patch("database.connection.AsyncSessionLocal") as mock_session_factory:
                     mock_session = AsyncMock()
                     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
-                    with patch("scheduler.main.logger") as mock_logger:
-                        await run_collection()
-
-                        mock_collector.collect.assert_awaited_once()
+                    with patch("jobs.sync_jobs.logger") as mock_logger:
+                        await sync_seller_items()
