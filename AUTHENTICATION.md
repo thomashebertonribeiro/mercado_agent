@@ -1,4 +1,4 @@
-# Guia de Autenticação: OAuth 2.0 com o Mercado Livre
+q# Guia de Autenticação: OAuth 2.0 com o Mercado Livre
 
 Este guia explica como registrar uma aplicação no Mercado Livre, configurar as credenciais no sistema e usar os endpoints de autenticação OAuth 2.0.
 

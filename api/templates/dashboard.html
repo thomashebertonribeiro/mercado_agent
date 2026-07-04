@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Intelligence Platform — Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg: #0f1117; --card: #1a1d2e; --border: #2a2d3e; --text: #e1e4f0; --muted: #888ca8; --green: #34d399; --yellow: #fbbf24; --red: #f87171; --blue: #60a5fa; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+  .card .value { font-size: 1.6rem; font-weight: 700; }
+  .card .value.green { color: var(--green); }
+  .card .value.yellow { color: var(--yellow); }
+  .card .value.red { color: var(--red); }
+  .card .value.blue { color: var(--blue); }
+  .section-title { font-size: 1.1rem; font-weight: 600; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.7rem; }
+  td:last-child, th:last-child { text-align: right; }
+  tr:hover { background: rgba(255,255,255,0.02); }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; }
+  .status.ok { background: rgba(52,211,153,0.15); color: var(--green); }
+  .status.err { background: rgba(248,113,113,0.15); color: var(--red); }
+  .summary { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; color: var(--muted); font-size: 0.85rem; }
+  .summary span { display: flex; align-items: center; gap: 6px; }
+  .bar-wrapper { background: var(--border); border-radius: 99px; height: 6px; width: 100%; overflow: hidden; margin-top: 4px; }
+  .bar { height: 100%; border-radius: 99px; transition: width 0.6s ease; }
+  .bar.green { background: var(--green); }
+  .bar.yellow { background: var(--yellow); }
+  .bar.red { background: var(--red); }
+  .bar.blue { background: var(--blue); }
+  @media (max-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } body { padding: 12px; } }
+</style>
+</head>
+<body>
+<h1>Market Intelligence Platform</h1>
+<div class="subtitle">Radar de Oportunidades — Observability Dashboard</div>
+<div class="summary" id="summary"></div>
+<div class="grid" id="counters"></div>
+<div class="section-title">Gauges</div>
+<div class="grid" id="gauges"></div>
+<div class="section-title">Categories — Product Count</div>
+<table><thead><tr><th>Category</th><th>Products</th><th></th></tr></thead><tbody id="cat-counts"></tbody></table>
+<div class="section-title">Categories — Scan Duration (seconds)</div>
+<table><thead><tr><th>Category</th><th>Avg</th><th>P50</th><th>P99</th><th>Min</th><th>Max</th><th>Count</th></tr></thead><tbody id="cat-durations"></tbody></table>
+<div class="section-title">Counters — Database</div>
+<div id="db-counters"></div>
+
+<script>
+async function load() {
+  try {
+    const res = await fetch('/platform/metrics');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    render(d);
+  } catch (e) {
+    document.body.innerHTML += `<div class="card" style="margin-top:24px;color:var(--red)">Erro ao carregar métricas: ${e.message}</div>`;
+  }
+}
+
+function render(d) {
+  // Summary
+  const up = d.uptime_seconds;
+  const days = Math.floor(up / 86400);
+  const hrs = Math.floor((up % 86400) / 3600);
+  const mins = Math.floor((up % 3600) / 60);
+  document.getElementById('summary').innerHTML = `
+    <span>Uptime: <strong>${days}d ${hrs}h ${mins}m</strong></span>
+    <span>DB: <span class="status ${d.db_status === 'unavailable' ? 'err' : 'ok'}">${d.db_status || 'online'}</span></span>
+  `;
+
+  // Counters grid
+  const counterKeys = ['collections_total', 'products_collected_total', 'events_generated_total', 'requests_total', 'scans_total', 'signals_total', 'recommendations_total', 'reports_total', 'collection_errors_total'];
+  const counterLabels = { collections_total: 'Collections', products_collected_total: 'Products Collected', events_generated_total: 'Events', requests_total: 'API Requests', scans_total: 'Scans', signals_total: 'Signals', recommendations_total: 'Recommendations', reports_total: 'Reports', collection_errors_total: 'Errors' };
+  const counterColors = { collection_errors_total: 'red', collections_total: 'blue', scans_total: 'green' };
+  let countersHtml = '';
+  for (const k of counterKeys) {
+    const v = (d.counters || {})[k] ?? 0;
+    const c = counterColors[k] || 'yellow';
+    countersHtml += `<div class="card"><div class="label">${counterLabels[k] || k}</div><div class="value ${c}">${v.toLocaleString()}</div></div>`;
+  }
+  document.getElementById('counters').innerHTML = countersHtml;
+
+  // Gauges
+  const gaugeKeys = ['collections_active', 'requests_in_flight', 'db_pool_size'];
+  const gaugeLabels = { collections_active: 'Active Collections', requests_in_flight: 'Requests In Flight', db_pool_size: 'DB Pool Size' };
+  let gaugesHtml = '';
+  for (const k of gaugeKeys) {
+    const v = (d.gauges || {})[k] ?? 0;
+    gaugesHtml += `<div class="card"><div class="label">${gaugeLabels[k] || k}</div><div class="value blue">${v}</div></div>`;
+  }
+  // DB counters
+  const dbKeys = ['products_in_db', 'collections_in_db', 'signals_in_db', 'recommendations_in_db', 'reports_in_db'];
+  for (const k of dbKeys) {
+    const v = (d.counters || {})[k];
+    if (v !== undefined) {
+      gaugesHtml += `<div class="card"><div class="label">${k.replace(/_/g,' ')}</div><div class="value blue">${v.toLocaleString()}</div></div>`;
+    }
+  }
+  document.getElementById('gauges').innerHTML = gaugesHtml;
+
+  // Category product counts
+  const catCounts = d.categories?.product_count || {};
+  let catCountHtml = '';
+  const maxCount = Math.max(1, ...Object.values(catCounts));
+  for (const [id, count] of Object.entries(catCounts).sort((a, b) => b[1] - a[1])) {
+    const pct = (count / maxCount) * 100;
+    catCountHtml += `<tr><td>${id}</td><td>${count.toLocaleString()}</td><td style="width:40%"><div class="bar-wrapper"><div class="bar green" style="width:${pct}%"></div></div></td></tr>`;
+  }
+  if (!catCountHtml) catCountHtml = '<tr><td colspan="3" style="color:var(--muted);text-align:center;">No categories with products</td></tr>';
+  document.getElementById('cat-counts').innerHTML = catCountHtml;
+
+  // Category durations
+  const catDurs = d.categories?.duration_seconds || {};
+  let catDurHtml = '';
+  for (const [id, h] of Object.entries(catDurs)) {
+    catDurHtml += `<tr><td>${id}</td><td>${h.avg != null ? h.avg.toFixed(2) : '-'}</td><td>${h.p50 != null ? h.p50.toFixed(2) : '-'}</td><td>${h.p99 != null ? h.p99.toFixed(2) : '-'}</td><td>${h.min != null ? h.min.toFixed(2) : '-'}</td><td>${h.max != null ? h.max.toFixed(2) : '-'}</td><td>${h.count}</td></tr>`;
+  }
+  if (!catDurHtml) catDurHtml = '<tr><td colspan="7" style="color:var(--muted);text-align:center;">No scan data yet</td></tr>';
+  document.getElementById('cat-durations').innerHTML = catDurHtml;
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

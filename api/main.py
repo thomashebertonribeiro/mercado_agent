@@ -1,10 +1,18 @@
+import time
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from config.settings import settings
-from api.routers import health, products, sellers, mercadolivre, intelligence, opportunity, analyst
+from api.routers import (
+    health, products, sellers, mercadolivre,
+    intelligence, opportunity, analyst,
+    scanner_routes, discoveries, metrics,
+    collection,
+)
 from utils.logger import logger
 from database.connection import ping_database
+from observability.metrics import platform_metrics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,11 +28,38 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down REST API...")
 
 app = FastAPI(
-    title="E-Commerce Intelligence Data Lake API",
-    description="REST API to manage monitoring targets and fetch historical metrics for Mercado Livre products.",
-    version="1.0.0",
+    title="Market Intelligence Platform API",
+    description=(
+        "Plataforma de Inteligência de Mercado para Marketplaces. "
+        "Radar de Oportunidades — descobre produtos automaticamente, "
+        "acompanha mudanças e gera recomendações priorizadas."
+    ),
+    version="2.0.0",
     lifespan=lifespan
 )
+
+
+# ── Observability middleware ─────────────────────────────────────────────
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    platform_metrics.requests_in_flight.inc()
+    t0 = time.monotonic()
+    response = await call_next(request)
+    elapsed = time.monotonic() - t0
+    platform_metrics.requests_in_flight.dec()
+
+    # Track by path pattern (strip dynamic segments)
+    path = request.url.path
+    for segment in request.path_params.values():
+        path = path.replace(str(segment), "{id}", 1)
+    logger.debug(
+        "Request",
+        method=request.method,
+        path=path,
+        status=response.status_code,
+        elapsed=round(elapsed, 3),
+    )
+    return response
 
 # Global custom error handler to hide details and log them with Loguru
 @app.exception_handler(Exception)
@@ -43,6 +78,10 @@ app.include_router(mercadolivre.router)
 app.include_router(intelligence.router)
 app.include_router(opportunity.router)
 app.include_router(analyst.router)
+app.include_router(scanner_routes.router)
+app.include_router(discoveries.router)
+app.include_router(metrics.router)
+app.include_router(collection.router)
 
 if __name__ == "__main__":
     import uvicorn

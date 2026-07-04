@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     LOG_RETENTION: str = "14 days"
 
     # Crawler Settings
-    PLAYWRIGHT_HEADLESS: bool = True
     CRAWLER_USER_AGENT: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     API_RATE_LIMIT_DELAY: float = 0.5
     PROXY_URL: Optional[str] = None
@@ -38,10 +37,6 @@ class Settings(BaseSettings):
     ML_CLIENT_ID: str = ""
     ML_CLIENT_SECRET: str = ""
     ML_REDIRECT_URI: str = "https://brasilices.tech/selldata/api/auth/callback"
-
-    # Scheduler intervals
-    SCHEDULER_FULL_INTERVAL_HOURS: int = 24
-    SCHEDULER_INCREMENTAL_INTERVAL_HOURS: int = 6
 
     # IntelligentCollector tuning
     COLLECTOR_MAX_CONCURRENCY: int = 5

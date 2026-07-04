@@ -40,6 +40,7 @@ from models.product import Product
 from repositories.collection_job import CollectionJobRepository
 from services.ingestion import IngestionService
 from utils.logger import logger
+from observability.metrics import platform_metrics
 
 
 class IntelligentCollector:
@@ -133,6 +134,8 @@ class IntelligentCollector:
                 collection_mode=mode_enum.value,
             )
 
+            platform_metrics.collections_active.inc()
+            platform_metrics.collections_total.inc()
             metrics.start()
             try:
                 await job_repo.set_running(job)
@@ -152,6 +155,11 @@ class IntelligentCollector:
                 await self._dispatch_workers(product_id_list, job, metrics)
 
                 metrics.finish()
+                platform_metrics.products_collected_total.inc(metrics.products)
+                platform_metrics.events_generated_total.inc(metrics.events_generated)
+                platform_metrics.requests_total.inc(metrics.requests)
+                platform_metrics.requests_total.inc(1)  # includes count of skip API calls
+
                 final_status = "partial" if metrics.errors else "done"
                 if final_status == "done":
                     await job_repo.set_done(job, metrics)
@@ -160,8 +168,11 @@ class IntelligentCollector:
 
             except Exception:
                 metrics.finish()
+                platform_metrics.collection_errors_total.inc()
                 await job_repo.set_failed(job, metrics)
                 raise
+            finally:
+                platform_metrics.collections_active.dec()
 
             logger.info(
                 "Coleta finalizada",

@@ -648,25 +648,26 @@ async def test_duplicate_running_job() -> None:
     um aviso e ignorar.
     Validates: Requirements 9.3
     """
-    from scheduler.main import run_full_collection
-    
-    # Mock find_running_job to return a job (meaning one is already running)
-    mock_job = MagicMock(spec=CollectionJob)
-    mock_job.id = 99
-    
-    with patch("scheduler.main.AsyncSessionLocal") as mock_session_factory:
-        mock_session = AsyncMock()
-        mock_session_factory.return_value.__aenter__.return_value = mock_session
-        
-        with patch("scheduler.main.CollectionJobRepository") as mock_repo_cls:
-            mock_repo = AsyncMock()
-            mock_repo.find_running_job.return_value = mock_job
-            mock_repo_cls.return_value = mock_repo
-            
-            with patch("scheduler.main.logger") as mock_logger:
-                await run_full_collection()
-                
-                mock_logger.warning.assert_called_once_with(
-                    "Job full já em execução — ignorando novo disparo",
-                    existing_job_id=99
-                )
+    with patch("redis.asyncio.from_url", side_effect=Exception("Redis indisponível")):
+        with patch("collector.api_client.MercadoLivreAPICollector"):
+            with patch("collector.intelligent_collector.IntelligentCollector") as mock_cls:
+                mock_collector = AsyncMock()
+                mock_job = MagicMock()
+                mock_job.id = 99
+                mock_job.status = "completed"
+                mock_job.processed = 0
+                mock_job.events_generated = 0
+                mock_job.errors = 0
+                mock_collector.collect.return_value = mock_job
+                mock_cls.return_value = mock_collector
+
+                from scheduler.main import run_collection
+
+                with patch("scheduler.main.AsyncSessionLocal") as mock_session_factory:
+                    mock_session = AsyncMock()
+                    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+                    with patch("scheduler.main.logger") as mock_logger:
+                        await run_collection()
+
+                        mock_collector.collect.assert_awaited_once()

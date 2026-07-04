@@ -18,6 +18,9 @@ from models.events import (
 from models.operational import CollectionJob, CollectionLog, Insight
 from models.ml_account import MLAccount
 from models.signal import Signal
+from models.recommendation import Recommendation
+from models.opportunity_score import OpportunityScoreResult
+from models.analysis_report import AnalysisReport
 
 __all__ = [
     "Base",
@@ -36,4 +39,7 @@ __all__ = [
     "Insight",
     "MLAccount",
     "Signal",
+    "Recommendation",
+    "OpportunityScoreResult",
+    "AnalysisReport",
 ]
