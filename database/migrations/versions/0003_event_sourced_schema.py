@@ -151,14 +151,14 @@ def upgrade() -> None:
     # (era a tabela de snapshots que estamos substituindo)
     op.drop_table("product_metrics_history")
 
-    op.add_column(
+    # category_id already exists from 0001 — add FK constraint only
+    op.create_foreign_key(
+        "fk_products_category_id",
         "products",
-        sa.Column(
-            "category_id",
-            sa.String(50),
-            sa.ForeignKey("categories.id", ondelete="SET NULL", name="fk_products_category_id"),
-            nullable=True,
-        ),
+        "categories",
+        ["category_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.add_column("products", sa.Column("condition", sa.String(30), nullable=True))
     op.add_column("products", sa.Column("listing_type_id", sa.String(50), nullable=True))

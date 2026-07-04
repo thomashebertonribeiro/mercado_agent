@@ -36,7 +36,7 @@ async def get_overview(
     accounts = await account_repo.get_all("mercadolivre")
     active_competitors = await comp_repo.count_active()
     recent_changes = await comp_repo.get_recent_changes(limit=10)
-    trends = await trend_repo.get_latest(trend_type="keyword", limit=10)
+    trends = await trend_repo.get_latest(limit=10)
 
     return {
         "accounts": {

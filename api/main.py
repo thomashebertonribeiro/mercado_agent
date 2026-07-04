@@ -87,4 +87,4 @@ app.include_router(dashboard.router)
 if __name__ == "__main__":
     import uvicorn
     logger.info(f"Starting server on port {settings.API_PORT} in {settings.ENV} mode.")
-    uvicorn.run("main:app", host="0.0.0.0", port=settings.API_PORT, reload=(settings.ENV == "development"))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=settings.API_PORT, reload=(settings.ENV == "development"))

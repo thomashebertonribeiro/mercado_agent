@@ -1,4 +1,3 @@
-import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -56,7 +55,7 @@ def do_run_migrations(connection):
         context.run_migrations()
 
 
-async def run_migrations_online() -> None:
+def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
     In this scenario we need to associate a connection
@@ -64,28 +63,25 @@ async def run_migrations_online() -> None:
 
     """
     from config.settings import settings
-    
+
     configuration = config.get_section(config.config_ini_section)
     if not configuration:
         configuration = {}
     configuration["sqlalchemy.url"] = settings.SYNC_DATABASE_URL
-    
-    connectable = AsyncEngine(
-        engine_from_config(
-            configuration,
-            prefix="sqlalchemy.",
-            poolclass=pool.NullPool,
-            future=True,
-        )
+
+    connectable = engine_from_config(
+        configuration,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
 
-    await connectable.dispose()
+    connectable.dispose()
 
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    run_migrations_online()

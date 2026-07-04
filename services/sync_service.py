@@ -167,25 +167,33 @@ class SyncService:
 
     async def fetch_trends(self) -> list[dict]:
         """
-        Busca tendencias via /trends/MLB (endpoint publico que funciona).
+        Busca tendencias via /trends/MLB.
+        Nota: este endpoint pode retornar 403 para apps nao certificados.
         """
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(f"{self.BASE_URL}/trends/MLB")
-            resp.raise_for_status()
-            trends = resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(f"{self.BASE_URL}/trends/MLB")
+                if resp.status_code == 403:
+                    logger.warning("Trends endpoint returned 403 - app not certified")
+                    return []
+                resp.raise_for_status()
+                trends = resp.json()
 
-        saved = []
-        for t in trends:
-            keyword = t.get("keyword", "")
-            if keyword:
-                await self._trend_repo.upsert(
-                    keyword=keyword,
-                    trend_type="keyword",
-                )
-                saved.append(keyword)
+            saved = []
+            for t in trends:
+                keyword = t.get("keyword", "")
+                if keyword:
+                    await self._trend_repo.upsert(
+                        keyword=keyword,
+                        trend_type="keyword",
+                    )
+                    saved.append(keyword)
 
-        logger.info(f"Tendencias coletadas: {len(saved)}")
-        return trends
+            logger.info(f"Tendencias coletadas: {len(saved)}")
+            return trends
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Erro ao buscar tendencias: {e.response.status_code}")
+            return []
 
     async def fetch_domain_discovery(self, query: str) -> list[dict]:
         """
@@ -203,12 +211,23 @@ class SyncService:
 
     async def fetch_categories(self) -> list[dict]:
         """
-        Busca categorias raiz (endpoint publico).
+        Busca categorias via domain_discovery com query ampla.
+        Nota: /sites/MLB/categories retorna 403, entao usamos domain_discovery.
         """
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(f"{self.BASE_URL}/sites/MLB/categories")
-            resp.raise_for_status()
-            return resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"{self.BASE_URL}/sites/MLB/domain_discovery/search",
+                    params={"q": "produtos", "limit": 50},
+                )
+                if resp.status_code == 403:
+                    logger.warning("Categories endpoint returned 403")
+                    return []
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Erro ao buscar categorias: {e.response.status_code}")
+            return []
 
     async def fetch_category_detail(self, category_id: str) -> Optional[dict]:
         """
