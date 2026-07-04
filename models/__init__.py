@@ -25,6 +25,7 @@ from models.competitor import Competitor
 from models.competitor_history import CompetitorHistory
 from models.market_trend import MarketTrend
 from models.marketplace_account import MarketplaceAccount
+from models.finance import ProductCost, CostHistory, FinancialSnapshot
 
 __all__ = [
     "Base",
@@ -50,4 +51,7 @@ __all__ = [
     "CompetitorHistory",
     "MarketTrend",
     "MarketplaceAccount",
+    "ProductCost",
+    "CostHistory",
+    "FinancialSnapshot",
 ]

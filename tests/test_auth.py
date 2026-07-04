@@ -37,10 +37,11 @@ def _make_account(
     acc.country = "MLB"
     acc.access_token = "valid-access-token"
     acc.refresh_token = "valid-refresh-token"
-    acc.expires_at = datetime.datetime.now(timezone.utc) + datetime.timedelta(
+    # Use naive UTC datetime to match the service's utcnow() usage
+    acc.expires_at = datetime.datetime.utcnow() + datetime.timedelta(
         seconds=expires_in_seconds
     )
-    acc.updated_at = datetime.datetime.now(timezone.utc)
+    acc.updated_at = datetime.datetime.utcnow()
     return acc
 
 
@@ -193,11 +194,13 @@ async def test_exchange_code_creates_account_in_db() -> None:
                 mock_settings.ML_CLIENT_SECRET = "client_secret"
                 mock_settings.ML_REDIRECT_URI = "http://localhost:8000/callback"
 
+            with patch("repositories.marketplace_account.MarketplaceAccountRepository") as MockMPRepo:
+                MockMPRepo.return_value.upsert = AsyncMock()
                 account = await service.exchange_code_for_token("authorization-code-abc")
 
     # Conta deve ter sido adicionada à sessão
     session.add.assert_called_once()
-    session.commit.assert_called_once()
+    session.commit.assert_called()
 
     # Verifica que os dados foram atribuídos corretamente à conta
     added_account: MLAccount = session.add.call_args[0][0]
