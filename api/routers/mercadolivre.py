@@ -59,6 +59,7 @@ async def connect(
 )
 async def callback(
     code: str = Query(..., description="Authorization code recebido do Mercado Livre"),
+    state: str = Query("", description="State parameter para PKCE"),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """
@@ -73,7 +74,7 @@ async def callback(
     """
     try:
         auth_service = MLAuthService(db)
-        account = await auth_service.exchange_code_for_token(code)
+        account = await auth_service.exchange_code_for_token(code, state=state)
         return {
             "message": "Conta autenticada com sucesso.",
             "user_id": account.user_id,

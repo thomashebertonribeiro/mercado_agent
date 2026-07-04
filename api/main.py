@@ -8,7 +8,7 @@ from api.routers import (
     health, products, sellers, mercadolivre,
     intelligence, opportunity, analyst,
     scanner_routes, discoveries, metrics,
-    collection, dashboard,
+    collection, dashboard, auth,
 )
 from utils.logger import logger
 from database.connection import ping_database
@@ -83,6 +83,7 @@ app.include_router(discoveries.router)
 app.include_router(metrics.router)
 app.include_router(collection.router)
 app.include_router(dashboard.router)
+app.include_router(auth.router)
 
 if __name__ == "__main__":
     import uvicorn

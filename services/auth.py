@@ -17,6 +17,9 @@ Sempre solicite ao MLAuthService.
 import datetime
 from datetime import timezone
 from typing import Optional
+import hashlib
+import base64
+import secrets
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,12 +29,15 @@ from repositories.ml_account import MLAccountRepository
 from utils.logger import logger
 
 # Mercado Livre OAuth 2.0 base URL
-ML_AUTH_BASE = "https://auth.mercadolibre.com.br"  # Brazil domain (change per country)
+ML_AUTH_BASE = "https://auth.mercadolibre.com"  # Use .com (not .com.br)
 ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 ML_ME_URL    = "https://api.mercadolibre.com/users/me"
 
 # Renovar token se restarem menos de 5 minutos para expirar
 TOKEN_REFRESH_THRESHOLD_SECONDS = 300
+
+# PKCE state storage (in-memory, keyed by state parameter)
+_pkce_state: dict[str, str] = {}  # state -> code_verifier
 
 
 class MLAuthService:
@@ -47,6 +53,17 @@ class MLAuthService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self._repo = MLAccountRepository(session)
+
+    @staticmethod
+    def _generate_code_verifier() -> str:
+        """Generate a random code verifier for PKCE (43-128 chars)."""
+        return secrets.token_urlsafe(64)[:128]
+
+    @staticmethod
+    def _generate_code_challenge(verifier: str) -> str:
+        """Generate S256 code challenge from verifier."""
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
     # ------------------------------------------------------------------ #
     # 1. URL de Autorização                                               #
@@ -76,6 +93,14 @@ class MLAuthService:
             f"&client_id={settings.ML_CLIENT_ID}"
             f"&redirect_uri={settings.ML_REDIRECT_URI}"
         )
+
+        # Add PKCE (required by ML) with state for persistence
+        code_verifier = self._generate_code_verifier()
+        code_challenge = self._generate_code_challenge(code_verifier)
+        state = secrets.token_urlsafe(32)
+        _pkce_state[state] = code_verifier
+        url += f"&code_challenge={code_challenge}&code_challenge_method=S256&state={state}"
+
         logger.info(f"Authorization URL gerada: {url}")
         return url
 
@@ -83,7 +108,7 @@ class MLAuthService:
     # 2. Callback: Troca o code pelo token                                #
     # ------------------------------------------------------------------ #
 
-    async def exchange_code_for_token(self, code: str) -> MLAccount:
+    async def exchange_code_for_token(self, code: str, state: str = "") -> MLAccount:
         """
         Recebe o authorization code do callback do Mercado Livre,
         solicita o access_token + refresh_token e armazena no banco.
@@ -101,6 +126,12 @@ class MLAuthService:
             "code": code,
             "redirect_uri": settings.ML_REDIRECT_URI,
         }
+
+        # Retrieve PKCE code_verifier from state storage
+        code_verifier = _pkce_state.pop(state, None)
+        if code_verifier:
+            payload["code_verifier"] = code_verifier
+            logger.debug(f"PKCE code_verifier recuperado para state={state[:8]}...")
 
         token_data = await self._request_token(payload)
         account = await self._upsert_account(token_data)
@@ -168,7 +199,7 @@ class MLAuthService:
         Lista todas as contas conectadas com informações de validade do token.
         """
         accounts = await self._repo.get_all_accounts()
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.utcnow()
         result = []
         for acc in accounts:
             seconds_remaining = (acc.expires_at - now).total_seconds()
@@ -215,7 +246,7 @@ class MLAuthService:
 
     def _is_token_expiring(self, account: MLAccount) -> bool:
         """Retorna True se o token expira em menos de TOKEN_REFRESH_THRESHOLD_SECONDS."""
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.utcnow()
         remaining = (account.expires_at - now).total_seconds()
         return remaining < TOKEN_REFRESH_THRESHOLD_SECONDS
 
@@ -236,7 +267,7 @@ class MLAuthService:
         account.access_token = token_data["access_token"]
         account.refresh_token = token_data.get("refresh_token", account.refresh_token)
         account.expires_at = self._compute_expires_at(token_data["expires_in"])
-        account.updated_at = datetime.datetime.now(timezone.utc)
+        account.updated_at = datetime.datetime.now(timezone.utc).replace(tzinfo=None)
 
         await self._session.commit()
         await self._session.refresh(account)
@@ -275,7 +306,7 @@ class MLAuthService:
         country = user_profile.get("site_id", "")
 
         expires_at = self._compute_expires_at(token_data["expires_in"])
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Tenta encontrar conta existente (upsert)
         account = await self._repo.get_by_user_id(user_id)
@@ -302,6 +333,20 @@ class MLAuthService:
 
         await self._session.commit()
         await self._session.refresh(account)
+
+        # Sync to marketplace_accounts for SyncService/TokenService
+        from repositories.marketplace_account import MarketplaceAccountRepository
+        mp_repo = MarketplaceAccountRepository(self._session)
+        await mp_repo.upsert(
+            marketplace="mercadolivre",
+            user_id=user_id,
+            access_token=access_token,
+            refresh_token=token_data["refresh_token"],
+            expires_at=expires_at,
+            nickname=nickname,
+            country=country,
+        )
+
         return account
 
     async def _fetch_user_profile(self, access_token: str) -> dict:
@@ -314,5 +359,5 @@ class MLAuthService:
 
     @staticmethod
     def _compute_expires_at(expires_in: int) -> datetime.datetime:
-        """Converte expires_in (segundos) para um timestamp UTC absoluto."""
-        return datetime.datetime.now(timezone.utc) + datetime.timedelta(seconds=expires_in)
+        """Converte expires_in (segundos) para um timestamp UTC absoluto (naive para PostgreSQL)."""
+        return (datetime.datetime.now(timezone.utc) + datetime.timedelta(seconds=expires_in)).replace(tzinfo=None)
